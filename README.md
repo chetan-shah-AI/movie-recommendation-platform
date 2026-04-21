@@ -4,7 +4,7 @@
 
 A production-oriented Movie Recommendation System that delivers personalized movie suggestions using collaborative filtering (Matrix Factorization - SVD), with optional hybrid and LLM-enhanced capabilities.
 
-The system is designed as a **modular, observable, and scalable ML service**, supporting full lifecycle workflows from data ingestion → model training → inference → monitoring. It includes advanced observability (OpenTelemetry, Prometheus, Grafana) and optional AI features like explanation generation via LLMs.
+The system is designed as a **modular, observable, and scalable ML service**, supporting full lifecycle workflows from data ingestion → model training → inference → monitoring. It includes advanced observability (Langfuse) and optional AI features like explanation generation via LLMs.
 
 ---
 
