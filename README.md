@@ -175,9 +175,6 @@ Adds:
 
 ### Observability
 
-* OpenTelemetry
-* Prometheus
-* Grafana
 * Langfuse
 
 ### Storage
