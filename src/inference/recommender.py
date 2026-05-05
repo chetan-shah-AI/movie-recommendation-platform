@@ -10,7 +10,7 @@ class MovieRecommender:
         self.ratings_df = ratings_df
         self.movies_df = movies_df
 
-        self.all_movie_ids = set(movies_df["movie_id"].unique())
+        self.all_movie_ids = set(movies_df["movieId"].unique())
         self.all_user_ids = set(ratings_df["user_id"].unique())
 
     def _get_unseen_movies(self, user_id: int) -> List[int]:
@@ -51,7 +51,7 @@ class MovieRecommender:
             if pred.est >= min_pred_rating:
                 predictions.append(
                     {
-                        "movie_id": movie_id,
+                        "movieId": movie_id,
                         "predicted_rating": round(pred.est, 3),
                     }
                 )
@@ -68,7 +68,7 @@ class MovieRecommender:
 
         results = pred_df.merge(
             self.movies_df,
-            on="movie_id",
+            on="movieId",
             how="left",
         )
 
