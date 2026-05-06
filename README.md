@@ -492,3 +492,7 @@ pytest
 ## 19. About
 
 A production-grade AI recommendation system designed to demonstrate end-to-end machine learning pipelines, observability, and scalable architecture — evolving from collaborative filtering to explainable AI-powered recommendations.
+
+
+
+## This repo will be used for Auto PR review by AI
