@@ -32,12 +32,21 @@ def main():
     df = df.drop_duplicates(subset=["userId", "movieId"])
     df = df[(df["rating"] >= 0.5) & (df["rating"] <= 5.0)]
 
+    # Rename for consistency
+    df = df.rename(
+        columns={
+            "userId": "user_id",
+            "movieId": "movie_id",
+        }
+    )
+
+
     # 3. Create encoders
     user_encoder = LabelEncoder()
     item_encoder = LabelEncoder()
 
-    df["user_idx"] = user_encoder.fit_transform(df["userId"])
-    df["item_idx"] = item_encoder.fit_transform(df["movieId"])
+    # df["user_idx"] = user_encoder.fit_transform(df["userId"])
+    # df["item_idx"] = item_encoder.fit_transform(df["movieId"])
 
     # 4. Split train/test
     train_df, test_df = train_test_split(
