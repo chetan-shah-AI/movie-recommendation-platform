@@ -6,3 +6,7 @@ pyarrow
 joblib 
 fastapi
 uvicorn
+loguru 
+langfuse 
+python-dotenv
+pydantic-settings

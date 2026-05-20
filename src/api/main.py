@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException
 from src.api.schemas import RecommendationRequest, RecommendationResponse
 from src.utils.model_loader import ModelLoader
 from src.inference.recommender import MovieRecommender
-
+from src.api.middleware import RequestLoggingMiddleware
+from src.monitoring.metrics import recommendation_metrics
 
 app = FastAPI(
     title="Movie Recommendation API",
@@ -10,6 +11,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app.add_middleware(RequestLoggingMiddleware)
 
 recommender = None
 
@@ -101,3 +103,7 @@ def recommend_movies(request: RecommendationRequest):
             status_code=500,
             detail=f"Recommendation failed: {str(e)}",
         )
+    
+@app.get("/metrics")
+def metrics():
+    return recommendation_metrics

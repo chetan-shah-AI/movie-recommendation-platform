@@ -1,8 +1,15 @@
+import time
+
 import pandas as pd
+
 from typing import List, Dict, Optional
 
 from src.utils.model_loader import ModelLoader
 from src.inference.cold_start import popularity_recommendations
+
+from src.monitoring.logger import app_logger
+from src.monitoring.langfuse_client import langfuse
+from src.monitoring.metrics import recommendation_metrics
 
 
 class MovieRecommender:
@@ -15,6 +22,10 @@ class MovieRecommender:
     - Genre filtering
     - Minimum predicted score filtering
     - Top-N ranking
+    - Structured logging
+    - Langfuse tracing
+    - Metrics tracking
+    - Error monitoring
     """
 
     def __init__(
@@ -24,12 +35,13 @@ class MovieRecommender:
         movies_df: pd.DataFrame,
     ):
         """
-        Initialize recommender with model and datasets.
+        Initialize recommender system.
         """
 
-        # -----------------------------------------
-        # Standardize column names
-        # -----------------------------------------
+        # =====================================================
+        # STANDARDIZE COLUMN NAMES
+        # =====================================================
+
         self.ratings_df = ratings_df.rename(
             columns={
                 "movieId": "movie_id",
@@ -45,9 +57,10 @@ class MovieRecommender:
 
         self.model = model
 
-        # -----------------------------------------
-        # Cached sets for fast lookup
-        # -----------------------------------------
+        # =====================================================
+        # FAST LOOKUP SETS
+        # =====================================================
+
         self.all_movie_ids = set(
             self.movies_df["movie_id"].unique()
         )
@@ -94,6 +107,7 @@ class MovieRecommender:
         for movie_id in unseen_movies:
 
             try:
+
                 prediction = self.model.predict(
                     user_id,
                     movie_id,
@@ -117,8 +131,15 @@ class MovieRecommender:
                         }
                     )
 
-            except Exception:
-                # Skip failed predictions safely
+            except Exception as e:
+
+                app_logger.warning(
+                    f"Prediction failed "
+                    f"user_id={user_id} "
+                    f"movie_id={movie_id} "
+                    f"error={str(e)}"
+                )
+
                 continue
 
         if not predictions:
@@ -131,7 +152,7 @@ class MovieRecommender:
         predictions_df: pd.DataFrame,
     ) -> pd.DataFrame:
         """
-        Attach movie titles and genres.
+        Merge predictions with movie metadata.
         """
 
         merged_df = predictions_df.merge(
@@ -149,12 +170,13 @@ class MovieRecommender:
         min_predicted_score: float,
     ) -> pd.DataFrame:
         """
-        Apply recommendation filtering logic.
+        Apply filtering logic.
         """
 
-        # -----------------------------------------
-        # Genre filtering
-        # -----------------------------------------
+        # =====================================================
+        # GENRE FILTER
+        # =====================================================
+
         if genre_filter:
 
             recommendations_df = recommendations_df[
@@ -165,9 +187,10 @@ class MovieRecommender:
                 )
             ]
 
-        # -----------------------------------------
-        # Minimum predicted score filtering
-        # -----------------------------------------
+        # =====================================================
+        # MINIMUM SCORE FILTER
+        # =====================================================
+
         recommendations_df = recommendations_df[
             recommendations_df["predicted_rating"]
             >= min_predicted_score
@@ -181,7 +204,7 @@ class MovieRecommender:
         top_n: int,
     ) -> pd.DataFrame:
         """
-        Rank recommendations by predicted rating.
+        Rank recommendations by predicted score.
         """
 
         ranked_df = recommendations_df.sort_values(
@@ -192,7 +215,7 @@ class MovieRecommender:
         return ranked_df
 
     # =========================================================
-    # MAIN PUBLIC METHOD
+    # MAIN RECOMMENDATION METHOD
     # =========================================================
 
     def recommend(
@@ -203,80 +226,211 @@ class MovieRecommender:
         min_predicted_score: float = 0.0,
     ) -> List[Dict]:
         """
-        Generate recommendations for a user.
+        Generate movie recommendations.
         """
 
         # =====================================================
-        # COLD START
+        # OBSERVABILITY START
         # =====================================================
 
-        if user_id not in self.all_user_ids:
-            print(
-                f"User ID {user_id} not found. Using cold-start fallback."
+        start_time = time.time()
+
+        recommendation_metrics["total_requests"] += 1
+
+        app_logger.info(
+            f"Recommendation request received "
+            f"user_id={user_id}"
+        )
+
+        try:
+
+            # =================================================
+            # LANGFUSE TRACE
+            # =================================================
+
+            with langfuse.start_as_current_observation(
+                name="movie_recommendation",
+                input={
+                    "user_id": user_id,
+                    "top_n": top_n,
+                    "genre_filter": genre_filter,
+                    "min_predicted_score": min_predicted_score,
+                },
+            ) as trace:
+
+                # =============================================
+                # COLD START FLOW
+                # =============================================
+
+                if user_id not in self.all_user_ids:
+
+                    recommendation_metrics[
+                        "cold_start_requests"
+                    ] += 1
+
+                    app_logger.info(
+                        f"Cold-start triggered "
+                        f"user_id={user_id}"
+                    )
+
+                    cold_start_results = (
+                        popularity_recommendations(
+                            ratings_df=self.ratings_df,
+                            movies_df=self.movies_df,
+                            top_n=top_n,
+                        )
+                    )
+
+                    duration = round(
+                        time.time() - start_time,
+                        3,
+                    )
+
+                    app_logger.info(
+                        f"Cold-start recommendations generated "
+                        f"user_id={user_id} "
+                        f"duration={duration}s"
+                    )
+
+                    trace.update(
+                        output={
+                            "recommendation_type": "cold_start",
+                            "recommendation_count": len(
+                                cold_start_results
+                            ),
+                            "duration_seconds": duration,
+                        }
+                    )
+
+                    return cold_start_results.to_dict(
+                        orient="records"
+                    )
+
+                # =============================================
+                # PERSONALIZED FLOW
+                # =============================================
+
+                recommendation_metrics[
+                    "personalized_requests"
+                ] += 1
+
+                unseen_movies = self._get_unseen_movies(
+                    user_id=user_id,
+                )
+
+                predictions_df = self._predict_ratings(
+                    user_id=user_id,
+                    unseen_movies=unseen_movies,
+                )
+
+                if predictions_df.empty:
+
+                    app_logger.warning(
+                        f"No predictions generated "
+                        f"user_id={user_id}"
+                    )
+
+                    trace.update(
+                        output={
+                            "recommendation_type": "empty",
+                            "recommendation_count": 0,
+                        }
+                    )
+
+                    return []
+
+                recommendations_df = (
+                    self._merge_movie_metadata(
+                        predictions_df=predictions_df,
+                    )
+                )
+
+                recommendations_df = self._apply_filters(
+                    recommendations_df=recommendations_df,
+                    genre_filter=genre_filter,
+                    min_predicted_score=min_predicted_score,
+                )
+
+                recommendations_df = self._rank_results(
+                    recommendations_df=recommendations_df,
+                    top_n=top_n,
+                )
+
+                # =============================================
+                # CLEAN OUTPUT
+                # =============================================
+
+                output_columns = [
+                    "movie_id",
+                    "title",
+                    "genres",
+                    "predicted_rating",
+                ]
+
+                if (
+                    "release_year"
+                    in recommendations_df.columns
+                ):
+                    output_columns.append(
+                        "release_year"
+                    )
+
+                recommendations_df = recommendations_df[
+                    output_columns
+                ]
+
+                recommendations = (
+                    recommendations_df.to_dict(
+                        orient="records"
+                    )
+                )
+
+                # =============================================
+                # OBSERVABILITY END
+                # =============================================
+
+                duration = round(
+                    time.time() - start_time,
+                    3,
+                )
+
+                app_logger.info(
+                    f"Recommendations generated "
+                    f"user_id={user_id} "
+                    f"count={len(recommendations)} "
+                    f"duration={duration}s"
+                )
+
+                trace.update(
+                    output={
+                        "recommendation_type": "personalized",
+                        "recommendation_count": len(
+                            recommendations
+                        ),
+                        "recommendation_movies":  recommendations,
+                        "duration_seconds": duration,
+                    }
+                )
+
+                return recommendations
+
+        # =====================================================
+        # ERROR HANDLING + OBSERVABILITY
+        # =====================================================
+
+        except Exception as e:
+
+            recommendation_metrics[
+                "failed_requests"
+            ] += 1
+
+            app_logger.exception(
+                f"Recommendation failed "
+                f"user_id={user_id} "
+                f"error={str(e)}"
             )
 
-            cold_start_results = popularity_recommendations(
-                ratings_df=self.ratings_df,
-                movies_df=self.movies_df,
-                top_n=top_n,
-            )
-
-            return cold_start_results.to_dict(
-                orient="records"
-            )
-
-        # =====================================================
-        # PERSONALIZED RECOMMENDATIONS
-        # =====================================================
-
-        unseen_movies = self._get_unseen_movies(
-            user_id=user_id,
-        )
-
-        predictions_df = self._predict_ratings(
-            user_id=user_id,
-            unseen_movies=unseen_movies,
-        )
-
-        if predictions_df.empty:
-            return []
-
-        recommendations_df = self._merge_movie_metadata(
-            predictions_df=predictions_df,
-        )
-
-        recommendations_df = self._apply_filters(
-            recommendations_df=recommendations_df,
-            genre_filter=genre_filter,
-            min_predicted_score=min_predicted_score,
-        )
-
-        recommendations_df = self._rank_results(
-            recommendations_df=recommendations_df,
-            top_n=top_n,
-        )
-
-        # =====================================================
-        # RETURN CLEAN OUTPUT
-        # =====================================================
-
-        output_columns = [
-            "movie_id",
-            "title",
-            "genres",
-            "predicted_rating",
-        ]
-
-        if "release_year" in recommendations_df.columns:
-            output_columns.append("release_year")
-
-        recommendations_df = recommendations_df[
-            output_columns
-        ]
-
-        return recommendations_df.to_dict(
-            orient="records"
-        )
+            raise
 
 
 # =============================================================
@@ -307,13 +461,6 @@ if __name__ == "__main__":
     # =========================================================
 
     test_cases = [
-        # {
-        #     "description": "Known user - Top 5",
-        #     "user_id": 4,
-        #     "top_n": 5,
-        #     "genre_filter": None,
-        #     "min_predicted_score": 0.0,
-        # },
         {
             "description": "Sci-Fi only",
             "user_id": 4,
@@ -321,20 +468,20 @@ if __name__ == "__main__":
             "genre_filter": "Sci-Fi",
             "min_predicted_score": 4.0,
         },
-        # {
-        #     "description": "Drama only with minimum score",
-        #     "user_id": 4,
-        #     "top_n": 5,
-        #     "genre_filter": "Drama",
-        #     "min_predicted_score": 3.5,
-        # },
-        # {
-        #     "description": "Cold-start unknown user",
-        #     "user_id": 9999,
-        #     "top_n": 5,
-        #     "genre_filter": None,
-        #     "min_predicted_score": 0.0,
-        # },
+        {
+            "description": "Drama only",
+            "user_id": 4,
+            "top_n": 5,
+            "genre_filter": "Drama",
+            "min_predicted_score": 3.5,
+        },
+        {
+            "description": "Cold-start user",
+            "user_id": 9999,
+            "top_n": 5,
+            "genre_filter": None,
+            "min_predicted_score": 0.0,
+        },
     ]
 
     # =========================================================
@@ -362,4 +509,3 @@ if __name__ == "__main__":
 
         for recommendation in recommendations:
             print(recommendation)
-
