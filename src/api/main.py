@@ -1,28 +1,26 @@
 from fastapi import FastAPI, HTTPException
+
 from src.api.schemas import RecommendationRequest, RecommendationResponse
 from src.utils.model_loader import ModelLoader
 from src.inference.recommender import MovieRecommender
-from src.api.middleware import RequestLoggingMiddleware
-from src.monitoring.metrics import recommendation_metrics
+from src.ai.explanation_service import ExplanationService
+
 
 app = FastAPI(
     title="Movie Recommendation API",
-    description="API for serving personalized and cold-start movie recommendations.",
-    version="1.0.0",
+    description="API for serving personalized, cold-start, and LLM-explained movie recommendations.",
+    version="1.1.0",
 )
 
-app.add_middleware(RequestLoggingMiddleware)
 
 recommender = None
+explanation_service = None
 
 
 @app.on_event("startup")
-def load_recommender():
-    """
-    Load model and data once when the API starts.
-    """
-
+def load_services():
     global recommender
+    global explanation_service
 
     try:
         loader = ModelLoader(
@@ -38,19 +36,18 @@ def load_recommender():
             movies_df=assets["movies"],
         )
 
-        print("Recommender loaded successfully.")
+        explanation_service = ExplanationService()
+
+        print("Recommender and explanation service loaded successfully.")
 
     except Exception as e:
-        print(f"Failed to load recommender: {e}")
+        print(f"Failed to load services: {e}")
         recommender = None
+        explanation_service = None
 
 
 @app.get("/health")
 def health_check():
-    """
-    Health check endpoint.
-    """
-
     if recommender is None:
         return {
             "status": "unhealthy",
@@ -59,16 +56,12 @@ def health_check():
 
     return {
         "status": "healthy",
-        "message": "Recommender API is running",
+        "message": "Movie Recommendation API is running",
     }
 
 
-@app.post("/recommend")
+@app.post("/recommend", response_model=RecommendationResponse)
 def recommend_movies(request: RecommendationRequest):
-    """
-    Generate movie recommendations.
-    """
-
     if recommender is None:
         raise HTTPException(
             status_code=503,
@@ -88,22 +81,41 @@ def recommend_movies(request: RecommendationRequest):
             if request.user_id not in recommender.all_user_ids
             else "personalized"
         )
-        print(recommendations_df)
 
-        # recommendations = recommendations_df.to_dict(orient="records")
+        explanation = None
+
+        if request.include_explanation:
+            if explanation_service is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Explanation service is not available.",
+                )
+
+            explanation = explanation_service.generate_explanation(
+                user_id=request.user_id,
+                recommendations_df=recommendations_df,
+                recommendation_type=recommendation_type,
+                genre_filter=request.genre_filter,
+            )
+
+        
+
+        recommendations_df = recommendations_df.fillna("")
+        recommendations = recommendations_df.to_dict(orient="records")
+
 
         return {
             "user_id": request.user_id,
             "recommendation_type": recommendation_type,
-            "recommendations": recommendations_df,
+            "recommendations": recommendations,
+            "explanation": explanation,
         }
+
+    except HTTPException:
+        raise
 
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Recommendation failed: {str(e)}",
         )
-    
-@app.get("/metrics")
-def metrics():
-    return recommendation_metrics

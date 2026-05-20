@@ -10,3 +10,4 @@ loguru
 langfuse 
 python-dotenv
 pydantic-settings
+openai

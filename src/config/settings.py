@@ -1,17 +1,23 @@
 from pydantic_settings import BaseSettings
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv() 
+
 
 class Settings(BaseSettings):
 
     APP_NAME: str = "Movie Recommendation Platform"
 
-    LANGFUSE_PUBLIC_KEY: str = "pk-lf-3fc41186-a399-420f-a9e9-2d6c7ab44650"
-    LANGFUSE_SECRET_KEY: str = "sk-lf-123c6142-77da-46f5-b7ba-3d4511556821"
+    OPENAI_API_KEY: str = os.getenv('OPENAI_API_KEY')
+    LLM_MODEL: str = os.getenv('LLM_MODEL')
+
+    LANGFUSE_PUBLIC_KEY: str = os.getenv('LANGFUSE_PUBLIC_KEY')
+    LANGFUSE_SECRET_KEY: str = os.getenv('LANGFUSE_SECRET_KEY')
 
     # IMPORTANT FIX
-    LANGFUSE_BASE_URL: str = (
-        "https://cloud.langfuse.com"
-    )
+    LANGFUSE_BASE_URL: str = os.getenv('LANGFUSE_BASE_URL')
 
     LOG_LEVEL: str = "INFO"
 

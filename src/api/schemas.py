@@ -7,6 +7,7 @@ class RecommendationRequest(BaseModel):
     top_n: int = 5
     genre_filter: Optional[str] = None
     min_predicted_score: Optional[float] = 0.0
+    include_explanation: bool = False
 
 
 class RecommendationItem(BaseModel):
@@ -21,3 +22,4 @@ class RecommendationResponse(BaseModel):
     user_id: int
     recommendation_type: str
     recommendations: List[RecommendationItem]
+    explanation: Optional[str] = None
