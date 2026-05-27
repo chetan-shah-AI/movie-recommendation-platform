@@ -1,6 +1,7 @@
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 
-from src.api.schemas import RecommendationRequest, RecommendationResponse
+from src.api.schemas import RecommendationRequest
 from src.utils.model_loader import ModelLoader
 from src.inference.recommender import MovieRecommender
 from src.ai.explanation_service import ExplanationService
@@ -8,10 +9,9 @@ from src.ai.explanation_service import ExplanationService
 
 app = FastAPI(
     title="Movie Recommendation API",
-    description="API for serving personalized, cold-start, and LLM-explained movie recommendations.",
-    version="1.1.0",
+    description="Movie recommender with OpenAI explanations and Langfuse tracing.",
+    version="1.2.0",
 )
-
 
 recommender = None
 explanation_service = None
@@ -38,29 +38,33 @@ def load_services():
 
         explanation_service = ExplanationService()
 
-        print("Recommender and explanation service loaded successfully.")
+        print("Recommender, OpenAI explanation service, and Langfuse loaded.")
 
     except Exception as e:
-        print(f"Failed to load services: {e}")
+        print(f"Startup failed: {e}")
         recommender = None
         explanation_service = None
 
 
-@app.get("/health")
-def health_check():
-    if recommender is None:
-        return {
-            "status": "unhealthy",
-            "message": "Recommender not loaded",
-        }
-
+@app.get("/")
+def root():
     return {
-        "status": "healthy",
         "message": "Movie Recommendation API is running",
+        "llm_explanations": "enabled",
+        "observability": "langfuse",
     }
 
 
-@app.post("/recommend", response_model=RecommendationResponse)
+@app.get("/health")
+def health_check():
+    return {
+        "status": "healthy" if recommender is not None else "unhealthy",
+        "recommender_loaded": recommender is not None,
+        "explanation_service_loaded": explanation_service is not None,
+    }
+
+
+@app.post("/recommend")
 def recommend_movies(request: RecommendationRequest):
     if recommender is None:
         raise HTTPException(
@@ -69,12 +73,23 @@ def recommend_movies(request: RecommendationRequest):
         )
 
     try:
-        recommendations_df = recommender.recommend(
+        raw_recommendations = recommender.recommend(
             user_id=request.user_id,
             top_n=request.top_n,
             genre_filter=request.genre_filter,
             min_predicted_score=request.min_predicted_score,
         )
+
+        if raw_recommendations is None:
+            recommendations_df = pd.DataFrame()
+        elif isinstance(raw_recommendations, pd.DataFrame):
+            recommendations_df = raw_recommendations.copy()
+        elif isinstance(raw_recommendations, list):
+            recommendations_df = pd.DataFrame(raw_recommendations)
+        else:
+            raise TypeError(
+                f"Unsupported recommender output type: {type(raw_recommendations)}"
+            )
 
         recommendation_type = (
             "cold_start"
@@ -98,23 +113,26 @@ def recommend_movies(request: RecommendationRequest):
                 genre_filter=request.genre_filter,
             )
 
-        
-
-        recommendations_df = recommendations_df.fillna("")
-        recommendations = recommendations_df.to_dict(orient="records")
-
+        clean_df = recommendations_df.fillna("")
+        recommendations = clean_df.to_dict(orient="records")
 
         return {
             "user_id": request.user_id,
             "recommendation_type": recommendation_type,
+            "recommendation_count": len(recommendations),
             "recommendations": recommendations,
             "explanation": explanation,
+            "observability": {
+                "provider": "langfuse",
+                "llm_tracing_enabled": request.include_explanation,
+            },
         }
 
     except HTTPException:
         raise
 
     except Exception as e:
+        print(f"Recommendation error: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Recommendation failed: {str(e)}",
