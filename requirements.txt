@@ -11,3 +11,5 @@ langfuse
 python-dotenv
 pydantic-settings
 openai
+pytest
+httpx

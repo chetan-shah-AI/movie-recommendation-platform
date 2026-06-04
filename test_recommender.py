@@ -4,9 +4,9 @@ import joblib
 from src.inference.recommender import MovieRecommender
 
 # Load artifacts
-model = joblib.load("artifacts/svd_model.pkl")
-ratings_df = pd.read_csv("data/raw/ratings_200.csv")
-movies_df = pd.read_csv("data/raw/movies.csv")
+model = joblib.load("artifacts/model.pkl")
+ratings_df = pd.read_csv("data/ratings.csv")
+movies_df = pd.read_csv("data/movies.csv")
 
 # Create recommender
 recommender = MovieRecommender(
