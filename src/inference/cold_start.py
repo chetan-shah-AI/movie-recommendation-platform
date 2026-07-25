@@ -8,9 +8,16 @@ def popularity_recommendations(
     min_ratings: int = 50,
 ) -> pd.DataFrame:
     """
-    Return popularity-based recommendations
-    for cold-start users.
+    Popularity-based recommendations for cold-start users.
     """
+
+    # Ensure consistent column names
+    ratings_df = ratings_df.rename(
+        columns={"movieId": "movie_id", "userId": "user_id"}
+    )
+    movies_df = movies_df.rename(
+        columns={"movieId": "movie_id"}
+    )
 
     stats = (
         ratings_df.groupby("movie_id")
@@ -21,9 +28,7 @@ def popularity_recommendations(
         .reset_index()
     )
 
-    stats = stats[
-        stats["rating_count"] >= min_ratings
-    ]
+    stats = stats[stats["rating_count"] >= min_ratings]
 
     ranked = stats.sort_values(
         ["avg_rating", "rating_count"],
