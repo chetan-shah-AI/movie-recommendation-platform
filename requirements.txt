@@ -4,12 +4,3 @@ scikit-learn==1.6.1
 scikit-surprise==1.1.4
 pyarrow
 joblib 
-fastapi
-uvicorn
-loguru 
-langfuse 
-python-dotenv
-pydantic-settings
-openai
-pytest
-httpx

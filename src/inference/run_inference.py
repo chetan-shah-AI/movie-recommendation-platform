@@ -7,22 +7,21 @@ def run_single_case(recommender, case: dict):
     print(case["description"])
     print("=" * 80)
 
-    try:
-        recommendations = recommender.recommend(
-            user_id=case["user_id"],
-            top_n=case.get("top_n", 5),
-            genre_filter=case.get("genre_filter"),
-            min_predicted_score=case.get("min_predicted_score", 0.0),
-        )
+    # try:
+    recommendations = recommender.recommend(
+        user_id=case["user_id"],
+        top_n=case.get("top_n", 5),
+        # genre_filter=case.get("genre_filter"),
+        # min_predicted_score=case.get("min_predicted_score"),
+    )
 
-        if not recommendations:
-            print("No recommendations found.")
-        else:
-            for rec in recommendations:
-                print(rec)
+    # if recommendations.empty:
+    #     print("No recommendations found.")
+    # else:
+    print(recommendations)
 
-    except Exception as e:
-        print(f"Error during inference: {e}")
+    # except Exception as e:
+    #     print(f"Error during inference: {e}")
 
 
 def main():
@@ -37,26 +36,39 @@ def main():
 
     print("Model and data loaded successfully.")
 
-    recommender = MovieRecommender(
-        model=assets["model"],
-        ratings_df=assets["train_data"],
-        movies_df=assets["movies"],
-    )
+    # ⚠️ IMPORTANT:
+    # Set this based on how you trained the model
+    # False → trained using user_id, movie_id
+    # True  → trained using user_idx, item_idx
+    USE_ENCODED_IDS = False
 
+    recommender = MovieRecommender(
+    model=assets["model"],
+    ratings_df=assets["train_data"],
+    movies_df=assets["movies"],
+)
+
+    # 🔥 Test scenarios
     test_cases = [
-        # {
-        #     "description": "Known user — Top 10 recommendations",
-        #     "user_id": 161935,
-        #     "top_n": 5,
-        #     "genre_filter": "Drama",
-        #     "min_predicted_score": 4.5,
-        # },
+        {
+            "description": "Known user — Top 5 recommendations",
+            "user_id": 1001,
+            "top_n": 10,
+        },
+        {
+            "description": "Known user — Sci-Fi filter",
+            "user_id": 1001,
+            "top_n": 10,
+        },
+        {
+            "description": "Known user — Drama, score >= 3.5",
+            "user_id": 1001,
+            "top_n": 10,
+        },
         {
             "description": "Unknown user — cold start fallback",
-            "user_id": 99999999999999,
+            "user_id": 9999,
             "top_n": 10,
-            "genre_filter": "Drama",
-            "min_predicted_score": 4.5,
         },
     ]
 
@@ -66,3 +78,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+    
